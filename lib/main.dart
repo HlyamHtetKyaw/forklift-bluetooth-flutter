@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -168,7 +170,7 @@ class _WeightScreenState extends State<WeightScreen> {
             Positioned(
               bottom: 20,
               right: 20,
-              child: FloatingActionButton(
+              child: ElevatedButton(
                 onPressed: _connectedDevice != null ? () async {
                   await _connectedDevice?.disconnect();
                   setState(() {
@@ -176,8 +178,15 @@ class _WeightScreenState extends State<WeightScreen> {
                     _writeCharacteristic = null;
                   });
                 } : null,
-                backgroundColor: _connectedDevice != null ? Colors.red : Colors.grey,
-                child: const Icon(Icons.bluetooth_disabled),
+                style: ButtonStyle(
+                  backgroundColor: WidgetStateProperty.resolveWith<Color>((states) {
+                    if (states.contains(WidgetState.disabled)) {
+                      return Colors.grey.withValues(alpha: 0.3); // 30% opacity when disabled
+                    }
+                    return Colors.red; // Red when enabled
+                  }),
+                ),
+                child: const Text("Disconnect",style: TextStyle(color: Colors.white),),
               ),
             ),
           ],
@@ -227,13 +236,27 @@ class _BluetoothButtonState extends State<BluetoothButton> {
   final List<BluetoothDevice> _devicesList = [];
   bool _isScanning = false;
 
-  void _startScan() {
+  StreamSubscription? _scanSubscription;
+
+  @override
+  void dispose() {
+    _scanSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _startScan() async {
     _devicesList.clear();
+    _scanSubscription?.cancel();
+    await FlutterBluePlus.stopScan();
+
+    if (!mounted) return;
+
     setState(() {
       _isScanning = true;
     });
 
-    FlutterBluePlus.scanResults.listen((results) {
+    _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
+      if (!mounted) return;
       for (ScanResult result in results) {
         if (!_devicesList.any((d) => d.remoteId == result.device.remoteId)) {
           setState(() {
@@ -244,9 +267,12 @@ class _BluetoothButtonState extends State<BluetoothButton> {
     });
 
     FlutterBluePlus.startScan(timeout: const Duration(seconds: 4)).then((_) {
+      if (!mounted) return;
       setState(() {
         _isScanning = false;
       });
+      _scanSubscription?.cancel(); // Cleanup after scan
+      super.dispose();
     });
   }
 
@@ -317,11 +343,11 @@ class _BluetoothButtonState extends State<BluetoothButton> {
           onPressed: () => _showDeviceSelectionDialog(context),
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.all(10),
-            backgroundColor: _connectedDevice != null ? Colors.greenAccent : Colors.redAccent,
+            backgroundColor: Colors.blueAccent,
             foregroundColor: Colors.white,
             shape: const CircleBorder(),
           ),
-          child: const Icon(Icons.bluetooth, size: 40),
+          child: const Icon(Icons.bluetooth, size: 25),
         ),
         if (_connectedDevice != null)
           Padding(
