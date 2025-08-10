@@ -12,7 +12,7 @@ void main() async {
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
   ]);
-
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   runApp(const MyApp());
 }
 
@@ -37,11 +37,10 @@ class WeightScreen extends StatefulWidget {
   @override
   State<WeightScreen> createState() => _WeightScreenState();
 }
-
+BluetoothCharacteristic? _writeCharacteristic;
 class _WeightScreenState extends State<WeightScreen> {
   final TextEditingController _weightController = TextEditingController();
   BluetoothDevice? _connectedDevice;
-  BluetoothCharacteristic? _writeCharacteristic;
 
   // Function to find the correct characteristic for writing
   Future<void> _findWriteCharacteristic(BluetoothDevice device) async {
@@ -68,7 +67,30 @@ class _WeightScreenState extends State<WeightScreen> {
       return;
     }
     try {
-      await _writeCharacteristic!.write(data.codeUnits);
+      List<int> bytes;
+      switch (data) {
+        case "F":
+          bytes = [0x46]; // ASCII F
+          break;
+        case "B":
+          bytes = [0x42];
+          break;
+        case "L":
+          bytes = [0x4C];
+          break;
+        case "R":
+          bytes = [0x52];
+          break;
+        default:
+          bytes = [0x00];
+      }
+
+      if (_writeCharacteristic!.properties.writeWithoutResponse) {
+        await _writeCharacteristic!.write(data.codeUnits, withoutResponse: true);
+      } else {
+        await _writeCharacteristic!.write(data.codeUnits);
+      }
+      // await _writeCharacteristic!.write(data.codeUnits);
       print('Sent: $data');
     } catch (e) {
       print('Error sending data: $e');
@@ -93,14 +115,25 @@ class _WeightScreenState extends State<WeightScreen> {
                         border: Border.all(color: Colors.black),
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: TextField(
-                        controller: _weightController,
-                        textAlign: TextAlign.center,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          hintText: 'Enter Weight',
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      // child: TextField(
+                      //   controller: _weightController,
+                      //   textAlign: TextAlign.center,
+                      //   keyboardType: TextInputType.number,
+                      //   decoration: const InputDecoration(
+                      //     hintText: 'Enter Weight',
+                      //     border: InputBorder.none,
+                      //     contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      //   ),
+                      // ),
+                      child: const Padding(
+                        padding: EdgeInsets.only(top: 10, bottom: 10),
+                        child: Text(
+                          'Weight Here',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
                         ),
                       ),
                     ),
@@ -122,7 +155,7 @@ class _WeightScreenState extends State<WeightScreen> {
                             }),
                             const SizedBox(height: 40),
                             _roundButton(Icons.arrow_downward, () {
-                              // Decrement logic
+                              _sendData("B");
                             }),
                           ],
                         ),
@@ -133,10 +166,12 @@ class _WeightScreenState extends State<WeightScreen> {
                           children: [
                             _roundButton(Icons.arrow_back, () {
                               // Move left
+                              _sendData("L");
                             }),
                             const SizedBox(width: 40),
                             _roundButton(Icons.arrow_forward, () {
                               // Move right
+                              _sendData("R");
                             }),
                           ],
                         ),
@@ -248,9 +283,7 @@ class _BluetoothButtonState extends State<BluetoothButton> {
     _devicesList.clear();
     _scanSubscription?.cancel();
     await FlutterBluePlus.stopScan();
-
-    if (!mounted) return;
-
+    print("Connected device: "+_connectedDevice.toString());
     setState(() {
       _isScanning = true;
     });
@@ -258,6 +291,7 @@ class _BluetoothButtonState extends State<BluetoothButton> {
     _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
       if (!mounted) return;
       for (ScanResult result in results) {
+        print("Scanned device: "+result.toString());
         if (!_devicesList.any((d) => d.remoteId == result.device.remoteId)) {
           setState(() {
             _devicesList.add(result.device);
@@ -270,9 +304,10 @@ class _BluetoothButtonState extends State<BluetoothButton> {
       if (!mounted) return;
       setState(() {
         _isScanning = false;
+        print("Scanned stopped with state: "+_isScanning.toString());
       });
+
       _scanSubscription?.cancel(); // Cleanup after scan
-      super.dispose();
     });
   }
 
@@ -288,6 +323,14 @@ class _BluetoothButtonState extends State<BluetoothButton> {
         SnackBar(content: Text('Failed to connect: $e')),
       );
     }
+    device.connectionState.listen((BluetoothConnectionState state) {
+      if (state == BluetoothConnectionState.disconnected) {
+        setState(() {
+          _connectedDevice = null;
+          _writeCharacteristic = null;
+        });
+      }
+    });
   }
 
   void _showDeviceSelectionDialog(BuildContext context) {
@@ -296,43 +339,54 @@ class _BluetoothButtonState extends State<BluetoothButton> {
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Available Devices'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: _isScanning
-                ? const Center(child: CircularProgressIndicator())
-                : ListView.builder(
-              shrinkWrap: true,
-              itemCount: _devicesList.length,
-              itemBuilder: (BuildContext context, int index) {
-                final device = _devicesList[index];
-                return ListTile(
-                  title: Text(device.platformName.isNotEmpty ? device.platformName : 'Unknown Device'),
-                  onTap: () {
-                    _connectToDevice(device);
-                    Navigator.of(dialogContext).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Connecting to: ${device.platformName}')),
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            return AlertDialog(
+              title: const Text('Available Devices'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child:
+                // _isScanning
+                //     ? const Center(child: CircularProgressIndicator())
+                //     :
+                ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _devicesList.length,
+                  itemBuilder: (BuildContext context, int index) {
+                    final device = _devicesList[index];
+                    return ListTile(
+                      title: Text(device.platformName.isNotEmpty
+                          ? device.platformName
+                          : 'Unknown Device'),
+                      onTap: () {
+                        _connectToDevice(device);
+                        Navigator.of(dialogContext).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Connecting to: ${device.platformName}'),
+                          ),
+                        );
+                      },
                     );
                   },
-                );
-              },
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Cancel'),
-              onPressed: () {
-                FlutterBluePlus.stopScan();
-                Navigator.of(dialogContext).pop();
-              },
-            ),
-          ],
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  child: const Text('Cancel'),
+                  onPressed: () {
+                    FlutterBluePlus.stopScan();
+                    Navigator.of(dialogContext).pop();
+                  },
+                ),
+              ],
+            );
+          },
         );
       },
     );
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -349,7 +403,7 @@ class _BluetoothButtonState extends State<BluetoothButton> {
           ),
           child: const Icon(Icons.bluetooth, size: 25),
         ),
-        if (_connectedDevice != null)
+        if(_connectedDevice != null)
           Padding(
             padding: const EdgeInsets.only(top: 8.0),
             child: Text(
