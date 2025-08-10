@@ -38,79 +38,147 @@ class WeightScreen extends StatefulWidget {
 
 class _WeightScreenState extends State<WeightScreen> {
   final TextEditingController _weightController = TextEditingController();
+  BluetoothDevice? _connectedDevice;
+  BluetoothCharacteristic? _writeCharacteristic;
+
+  // Function to find the correct characteristic for writing
+  Future<void> _findWriteCharacteristic(BluetoothDevice device) async {
+    try {
+      final services = await device.discoverServices();
+      for (var service in services) {
+        for (var characteristic in service.characteristics) {
+          if (characteristic.properties.write) {
+            _writeCharacteristic = characteristic;
+            break;
+          }
+        }
+        if (_writeCharacteristic != null) break;
+      }
+    } catch (e) {
+      print('Error finding characteristic: $e');
+    }
+  }
+
+  // Function to send data via Bluetooth
+  Future<void> _sendData(String data) async {
+    if (_writeCharacteristic == null) {
+      print('No characteristic found for writing.');
+      return;
+    }
+    try {
+      await _writeCharacteristic!.write(data.codeUnits);
+      print('Sent: $data');
+    } catch (e) {
+      print('Error sending data: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            // 🔝 Top: Weight input
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Center(
-                child: Container(
-                  width: 200,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.black),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: TextField(
-                    controller: _weightController,
-                    textAlign: TextAlign.center,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      hintText: 'Enter Weight',
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            Column(
+              children: [
+                // 🔝 Top: Weight input
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Center(
+                    child: Container(
+                      width: 200,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.black),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: TextField(
+                        controller: _weightController,
+                        textAlign: TextAlign.center,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          hintText: 'Enter Weight',
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
 
-            // 🎮 Middle: Arrow Buttons
-            Expanded(
-              child: Center(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    // Up/Down buttons
-                    Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                // 🎮 Middle: Arrow Buttons
+                Expanded(
+                  child: Center(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        _roundButton(Icons.arrow_upward, () {
-                          // Increment logic
-                        }),
-                        const SizedBox(height: 40),
-                        _roundButton(Icons.arrow_downward, () {
-                          // Decrement logic
-                        }),
+                        // Up/Down buttons
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _roundButton(Icons.arrow_upward, () {
+                              _sendData("F"); // Send "F" on up arrow press
+                            }),
+                            const SizedBox(height: 40),
+                            _roundButton(Icons.arrow_downward, () {
+                              // Decrement logic
+                            }),
+                          ],
+                        ),
+
+                        const SizedBox(width: 200),
+                        // Left/Right buttons
+                        Row(
+                          children: [
+                            _roundButton(Icons.arrow_back, () {
+                              // Move left
+                            }),
+                            const SizedBox(width: 40),
+                            _roundButton(Icons.arrow_forward, () {
+                              // Move right
+                            }),
+                          ],
+                        ),
                       ],
                     ),
-
-                    const SizedBox(width: 200),
-                    // Left/Right buttons
-                    Row(
-                      children: [
-                        _roundButton(Icons.arrow_back, () {
-                          // Move left
-                        }),
-                        const SizedBox(width: 40),
-                        _roundButton(Icons.arrow_forward, () {
-                          // Move right
-                        }),
-                      ],
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+
+                // 📶 Bottom: Bluetooth button
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 20),
+                  child: BluetoothButton(
+                    onDeviceConnected: (device) {
+                      setState(() {
+                        _connectedDevice = device;
+                      });
+                      _findWriteCharacteristic(device);
+                    },
+                    onDeviceDisconnected: () {
+                      setState(() {
+                        _connectedDevice = null;
+                      });
+                      _writeCharacteristic = null;
+                    },
+                  ),
+                ),
+              ],
             ),
 
-            // 📶 Bottom: Bluetooth button
-            Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: const BluetoothButton()
+            // 🚪 Disconnect button in the bottom right corner
+            Positioned(
+              bottom: 20,
+              right: 20,
+              child: FloatingActionButton(
+                onPressed: _connectedDevice != null ? () async {
+                  await _connectedDevice?.disconnect();
+                  setState(() {
+                    _connectedDevice = null;
+                    _writeCharacteristic = null;
+                  });
+                } : null,
+                backgroundColor: _connectedDevice != null ? Colors.red : Colors.grey,
+                child: const Icon(Icons.bluetooth_disabled),
+              ),
             ),
           ],
         ),
@@ -140,14 +208,19 @@ class _WeightScreenState extends State<WeightScreen> {
   }
 }
 
-class BluetoothButton extends StatefulWidget{
-  const BluetoothButton({super.key});
+class BluetoothButton extends StatefulWidget {
+  final Function(BluetoothDevice) onDeviceConnected;
+  final VoidCallback onDeviceDisconnected;
+
+  const BluetoothButton({
+    super.key,
+    required this.onDeviceConnected,
+    required this.onDeviceDisconnected,
+  });
 
   @override
   State<BluetoothButton> createState() => _BluetoothButtonState();
 }
-
-
 
 class _BluetoothButtonState extends State<BluetoothButton> {
   BluetoothDevice? _connectedDevice;
@@ -183,8 +256,7 @@ class _BluetoothButtonState extends State<BluetoothButton> {
       setState(() {
         _connectedDevice = device;
       });
-      // In a real app, you would now discover services and characteristics
-      // await device.discoverServices();
+      widget.onDeviceConnected(device);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to connect: $e')),
