@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:async'; // for Timer
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -72,6 +73,12 @@ class WeightScreen extends StatefulWidget {
 
 class _WeightScreenState extends State<WeightScreen> {
   String? _connectedDeviceName;
+  bool _isForwardPressed = false;
+  bool _isLeftPressed = false;
+  bool _isBackwardPressed = false;
+  bool _isRightPressed = false;
+
+  Timer? _sendTimer;
 
   void _showDeviceSelectionDialog() async {
     final devices = await getPairedDevices();
@@ -125,19 +132,37 @@ class _WeightScreenState extends State<WeightScreen> {
     await sendCommand(command);
   }
 
-  Widget _roundButton(IconData icon, VoidCallback onPressed) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.grey[300],
-        shape: BoxShape.circle,
-      ),
-      child: IconButton(
-        icon: Icon(icon),
-        onPressed: onPressed,
-        iconSize: 48,
-        color: Colors.black,
-      ),
-    );
+  void _startSending() {
+    _sendSignal(); // send immediately
+
+    _sendTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      _sendSignal();
+    });
+  }
+
+  void _stopSending() {
+    _sendTimer?.cancel();
+    _sendTimer = null;
+  }
+
+  void _sendSignal() {
+    if (_isForwardPressed && _isLeftPressed) {
+      _send("J"); // forward-left
+    }else if(_isForwardPressed && _isRightPressed){
+      _send("I"); // forward-right
+    }else if(_isBackwardPressed && _isLeftPressed){
+      _send("M"); // backward-left
+    }else if(_isBackwardPressed && _isRightPressed){
+      _send("K"); // backward-right
+    }else if (_isForwardPressed) {
+      _send("F"); // forward
+    }else if (_isBackwardPressed) {
+      _send("B"); // backward
+    }else if (_isLeftPressed) {
+      _send("L"); // left
+    }else if (_isRightPressed) {
+      _send("R"); // right
+    }
   }
 
   @override
@@ -179,17 +204,57 @@ class _WeightScreenState extends State<WeightScreen> {
                         Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            _roundButton(Icons.arrow_upward, () => _send("F")),
+                            RoundButton(
+                              icon: Icons.arrow_upward,
+                              onPressStart: () {
+                                _isForwardPressed = true;
+                                _startSending();
+                              },
+                              onPressEnd: () {
+                                _isForwardPressed = false;
+                                _stopSending();
+                              },
+                            ),
                             const SizedBox(height: 40),
-                            _roundButton(Icons.arrow_downward, () => _send("B")),
+                            RoundButton(
+                              icon: Icons.arrow_downward,
+                              onPressStart: () {
+                                _isBackwardPressed = true;
+                                _startSending();
+                              },
+                              onPressEnd: () {
+                                _isBackwardPressed = false;
+                                _stopSending();
+                              }
+                            ),
                           ],
                         ),
                         const SizedBox(width: 200),
                         Row(
                           children: [
-                            _roundButton(Icons.arrow_back, () => _send("L")),
+                            RoundButton(
+                              icon: Icons.arrow_back,
+                              onPressStart: () {
+                                _isLeftPressed = true;
+                                _startSending();
+                              },
+                              onPressEnd: () {
+                                _isLeftPressed = false;
+                                _stopSending();
+                              }
+                            ),
                             const SizedBox(width: 40),
-                            _roundButton(Icons.arrow_forward, () => _send("R")),
+                            RoundButton(
+                              icon: Icons.arrow_forward,
+                                onPressStart: () {
+                                _isRightPressed = true;
+                                _startSending();
+                              },
+                                onPressEnd: () {
+                                _isRightPressed = false;
+                                _stopSending();
+                              }
+                            ),
                           ],
                         ),
                       ],
@@ -245,3 +310,85 @@ class _WeightScreenState extends State<WeightScreen> {
     );
   }
 }
+
+class RoundButton extends StatefulWidget {
+  final IconData icon;
+  final VoidCallback onPressStart;
+  final VoidCallback onPressEnd;
+
+  const RoundButton({
+    super.key,
+    required this.icon,
+    required this.onPressStart,
+    required this.onPressEnd,
+  });
+
+  @override
+  State<RoundButton> createState() => _RoundButtonState();
+}
+
+class _RoundButtonState extends State<RoundButton> {
+  bool _isPressed = false;
+
+  void _handleTapDown(_) {
+    setState(() {
+      _isPressed = true;
+    });
+    widget.onPressStart();
+  }
+
+  void _handleTapUp(_) {
+    setState(() {
+      _isPressed = false;
+    });
+    widget.onPressEnd();
+  }
+
+  void _handleTapCancel() {
+    setState(() {
+      _isPressed = false;
+    });
+    widget.onPressEnd();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedScale(
+      scale: _isPressed ? 1.2 : 1.0,
+      duration: const Duration(milliseconds: 100),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTapDown: _handleTapDown,
+          onTapUp: _handleTapUp,
+          onTapCancel: _handleTapCancel,
+          customBorder: const CircleBorder(),
+          splashColor: Colors.black26,
+          child: Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              shape: BoxShape.circle,
+              boxShadow: _isPressed
+                  ? [
+                BoxShadow(
+                  color: Colors.blue.withOpacity(0.5),
+                  blurRadius: 12,
+                  spreadRadius: 2,
+                )
+              ]
+                  : [],
+            ),
+            child: Icon(
+              widget.icon,
+              size: 48,
+              color: Colors.black,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
