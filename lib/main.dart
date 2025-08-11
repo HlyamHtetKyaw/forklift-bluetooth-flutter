@@ -80,6 +80,20 @@ class _WeightScreenState extends State<WeightScreen> {
 
   Timer? _sendTimer;
 
+  double _scale = 1.0;
+
+  void _onTapDown(TapDownDetails details) {
+    setState(() {
+      _scale = 1.2;
+    });
+  }
+
+  void _onTapUp(TapUpDetails details) {
+    setState(() {
+      _scale = 1.0;
+    });
+  }
+
   void _showDeviceSelectionDialog() async {
     final devices = await getPairedDevices();
 
@@ -98,13 +112,44 @@ class _WeightScreenState extends State<WeightScreen> {
                   title: Text(device['name'] ?? 'Unknown'),
                   subtitle: Text(device['address'] ?? ''),
                   onTap: () async {
-                    Navigator.pop(context);
+                    Navigator.pop(context); // Close the device selection dialog
                     final address = device['address']!;
                     final name = device['name']!;
-                    await connectToDevice(address);
-                    setState(() {
-                      _connectedDeviceName = name;
-                    });
+                    BuildContext? dialogContext;
+
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (BuildContext ctx) {
+                        dialogContext = ctx;
+                        return AlertDialog(
+                          content: Row(
+                            children: [
+                              const CircularProgressIndicator(),
+                              const SizedBox(width: 20),
+                              Expanded(child: Text('Connecting to $name...')),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+
+                    try {
+                      await connectToDevice(address);
+                      setState(() {
+                        _connectedDeviceName = name;
+                      });
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed to connect to $name')),
+                      );
+                    } finally {
+                      // CORRECTED: Use dialogContext to pop the connecting dialog
+                      if (dialogContext != null) {
+                        print("it is closed");
+                        Navigator.of(dialogContext!).pop();
+                      }
+                    }
                   },
                 );
               },
@@ -205,7 +250,7 @@ class _WeightScreenState extends State<WeightScreen> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             RoundButton(
-                              icon: Icons.arrow_upward,
+                              icon: Icons.keyboard_double_arrow_up_sharp,
                               onPressStart: () {
                                 _isForwardPressed = true;
                                 _startSending();
@@ -217,7 +262,7 @@ class _WeightScreenState extends State<WeightScreen> {
                             ),
                             const SizedBox(height: 40),
                             RoundButton(
-                              icon: Icons.arrow_downward,
+                              icon: Icons.keyboard_double_arrow_down_sharp,
                               onPressStart: () {
                                 _isBackwardPressed = true;
                                 _startSending();
@@ -233,7 +278,7 @@ class _WeightScreenState extends State<WeightScreen> {
                         Row(
                           children: [
                             RoundButton(
-                              icon: Icons.arrow_back,
+                              icon: Icons.keyboard_double_arrow_left_sharp,
                               onPressStart: () {
                                 _isLeftPressed = true;
                                 _startSending();
@@ -245,7 +290,7 @@ class _WeightScreenState extends State<WeightScreen> {
                             ),
                             const SizedBox(width: 40),
                             RoundButton(
-                              icon: Icons.arrow_forward,
+                              icon: Icons.keyboard_double_arrow_right_sharp,
                                 onPressStart: () {
                                 _isRightPressed = true;
                                 _startSending();
@@ -291,17 +336,36 @@ class _WeightScreenState extends State<WeightScreen> {
             Positioned(
               bottom: 20,
               right: 20,
-              child: ElevatedButton(
-                onPressed: _connectedDeviceName != null ? _disconnect : null,
-                style: ButtonStyle(
-                  backgroundColor: WidgetStateProperty.resolveWith<Color>((states) {
-                    if (states.contains(WidgetState.disabled)) {
-                      return Colors.grey.withAlpha(80);
-                    }
-                    return Colors.red;
-                  }),
+              child: GestureDetector(
+                onTapDown: _onTapDown,
+                onTapUp: _onTapUp,
+                onTapCancel: () => setState(() => _scale = 1.0),
+                child: AnimatedScale(
+                  scale: _scale,
+                  duration: const Duration(milliseconds: 100),
+                  curve: Curves.easeOut,
+                  child: ElevatedButton(
+                    onPressed: _connectedDeviceName != null ? _disconnect : null,
+                    style: ButtonStyle(
+                      backgroundColor: WidgetStateProperty.resolveWith<Color>((states) {
+                        if (states.contains(WidgetState.disabled)) {
+                          return Colors.grey.withAlpha(80);
+                        }
+                        return Colors.red;
+                      }),
+                    ),
+                    child: const Text("Disconnect", style: TextStyle(color: Colors.white)),
+                  ),
                 ),
-                child: const Text("Disconnect", style: TextStyle(color: Colors.white)),
+              ),
+            ),
+            Positioned(
+              top: 20,
+              left: 20,
+              child: Image.asset(
+                'assets/tu_tgi.png',
+                width: 50,
+                height: 50,
               ),
             ),
           ],
@@ -354,8 +418,8 @@ class _RoundButtonState extends State<RoundButton> {
   @override
   Widget build(BuildContext context) {
     return AnimatedScale(
-      scale: _isPressed ? 1.2 : 1.0,
-      duration: const Duration(milliseconds: 100),
+      scale: _isPressed ? 1 : 0.9,
+      duration: const Duration(milliseconds: 150),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -373,9 +437,9 @@ class _RoundButtonState extends State<RoundButton> {
               boxShadow: _isPressed
                   ? [
                 BoxShadow(
-                  color: Colors.blue.withOpacity(0.5),
-                  blurRadius: 12,
-                  spreadRadius: 2,
+                  color: Colors.black.withValues(alpha: 0.5),
+                  blurRadius: 10,
+                  spreadRadius: 5,
                 )
               ]
                   : [],
