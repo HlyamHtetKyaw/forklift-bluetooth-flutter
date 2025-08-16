@@ -8,17 +8,12 @@ AF_DCMotor motor3(3, MOTOR34_1KHZ); // Back Left
 AF_DCMotor motor4(4, MOTOR34_1KHZ); // Back Right
 int motorSpeed = 150;
 
-// Define SoftwareSerial pins for HC-05
 SoftwareSerial bluetooth(A0, A1); // RX, TX
 
 void setup() {
-  // Start the hardware serial (Serial Monitor)
   Serial.begin(9600);
-
-  // Start software serial for HC-05
-  bluetooth.begin(9600);  // Default HC-05 baud rate
-
-  Serial.println("Ready. Type something in the Serial Monitor to send to HC-05");
+  bluetooth.begin(9600); 
+  Serial.println("Ready");
 }
 
 void loop() {
@@ -31,9 +26,9 @@ void loop() {
       case 'L': moveLeft(); break;
       case 'R': moveRight(); break;
       case 'J': topLeft(); break;
-      case 'K': bottomright(); break;
-      case 'M': bottomleft(); break;
-      case 'I': topright(); break;
+      case 'K': bottomRight(); break;
+      case 'M': bottomLeft(); break;
+      case 'I': topRight(); break;
       case 'T': stopMotors(); break;
       // case 'S': startStepper(true, 200, 1000); break;   // CW
       // case 's': startStepper(false, 200, 1000); break;  // CCW
@@ -41,7 +36,7 @@ void loop() {
   }
 }
 
-void moveForward()  {
+void moveForward(){
   motor1.setSpeed(motorSpeed);
   motor2.setSpeed(motorSpeed);
   motor3.setSpeed(motorSpeed);
@@ -51,15 +46,15 @@ void moveForward()  {
   motor3.run(FORWARD);
   motor4.run(FORWARD);
 }
-void moveBackward() 
+void moveBackward(){
   motor1.setSpeed(motorSpeed);
   motor2.setSpeed(motorSpeed);
   motor3.setSpeed(motorSpeed);
   motor4.setSpeed(motorSpeed);
-  motor1.run(BACKWARD); 
-  motor2.run(BACKWARD); 
-  motor3.run(BACKWARD); 
-  motor4.run(BACKWARD); 
+  motor1.run(BACKWARD);
+  motor2.run(BACKWARD);
+  motor3.run(BACKWARD);
+  motor4.run(BACKWARD);
 }
 void moveLeft(){ 
   motor1.setSpeed(motorSpeed); 
@@ -81,32 +76,28 @@ void moveRight(){
   motor3.run(BACKWARD); 
   motor4.run(FORWARD); 
 }
-void topLeft()
-{
-  motor1.setSpeed(Speed);
+void topLeft(){
+  motor1.setSpeed(motorSpeed);
   motor1.run(FORWARD);
-  motor3.setSpeed(Speed);
+  motor3.setSpeed(motorSpeed);
   motor3.run(FORWARD);
 }
-void topRight()
-{
-  motor2.setSpeed(Speed);
+void topRight(){
+  motor2.setSpeed(motorSpeed);
   motor2.run(BACKWARD);
-  motor4.setSpeed(Speed);
+  motor4.setSpeed(motorSpeed);
   motor4.run(BACKWARD);
 }
-void bottomLeft()
-{
-  motor2.setSpeed(Speed);
+void bottomLeft(){
+  motor2.setSpeed(motorSpeed);
   motor2.run(FORWARD);
-  motor4.setSpeed(Speed);
+  motor4.setSpeed(motorSpeed);
   motor4.run(FORWARD);
 }
-void bottomRight()
-{
-  motor1.setSpeed(Speed);
+void bottomRight(){
+  motor1.setSpeed(motorSpeed);
   motor1.run(BACKWARD);
-  motor3.setSpeed(Speed);
+  motor3.setSpeed(motorSpeed);
   motor3.run(BACKWARD);
 }
 void stopMotors(){
