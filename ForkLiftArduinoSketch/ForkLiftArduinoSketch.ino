@@ -10,6 +10,11 @@ int motorSpeed = 150;
 
 SoftwareSerial bluetooth(A0, A1); // RX, TX
 
+unsigned long lastCommandTime = 0;
+unsigned long commandTimeout = 100;
+bool isMoving = false;
+
+
 void setup() {
   Serial.begin(9600);
   bluetooth.begin(9600); 
@@ -20,6 +25,9 @@ void loop() {
   if (bluetooth.available() > 0) {
     char command = bluetooth.read();
     Serial.println(command);
+    lastCommandTime = millis();
+    isMoving = true;
+
     switch (command) {
       case 'F': moveForward(); break;
       case 'B': moveBackward(); break;
@@ -29,10 +37,13 @@ void loop() {
       case 'K': bottomRight(); break;
       case 'M': bottomLeft(); break;
       case 'I': topRight(); break;
-      case 'T': stopMotors(); break;
-      // case 'S': startStepper(true, 200, 1000); break;   // CW
-      // case 's': startStepper(false, 200, 1000); break;  // CCW
+      case 'T': stopMotors(); isMoving = false; break;
     }
+  }
+
+  if (isMoving && millis() - lastCommandTime > commandTimeout) {
+    stopMotors();
+    isMoving = false;
   }
 }
 
