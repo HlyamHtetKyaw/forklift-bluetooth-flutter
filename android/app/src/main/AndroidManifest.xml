@@ -7,7 +7,7 @@
 
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
     <application
-        android:label="forklift_bluetooth_v1.0"
+        android:label="forklift_bluetooth_v2.0"
         android:name="${applicationName}"
         android:icon="@mipmap/forklift">
         <activity

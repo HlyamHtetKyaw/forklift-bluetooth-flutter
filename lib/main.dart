@@ -1,11 +1,16 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:permission_handler/permission_handler.dart';
+
 // for Timer
+
+const EventChannel _eventChannel = EventChannel('classic_bluetooth/stream');
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
+  await _requestBluetoothPermissions();
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
@@ -13,6 +18,22 @@ void main() async {
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
   runApp(const MyApp());
+}
+
+Future<void> _requestBluetoothPermissions() async {
+  if (await Permission.bluetoothConnect.isDenied ||
+      await Permission.bluetoothScan.isDenied) {
+    await [
+      Permission.bluetoothConnect,
+      Permission.bluetoothScan,
+      Permission.locationWhenInUse, // Optional: For older Androids
+    ].request();
+  }
+
+  // Optionally, check if denied forever and show rationale
+  if (await Permission.bluetoothConnect.isPermanentlyDenied) {
+    openAppSettings(); // or show dialog
+  }
 }
 
 const platform = MethodChannel('classic_bluetooth');
@@ -77,10 +98,34 @@ class _WeightScreenState extends State<WeightScreen> {
   bool _isLeftPressed = false;
   bool _isBackwardPressed = false;
   bool _isRightPressed = false;
+  bool _isMiddleUpPressed = false;
+  bool _isMiddleDownPressed = false;
+  String _weightText = "0.0";
 
   Timer? _sendTimer;
 
   double _scale = 1.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _startListeningToWeight();
+  }
+
+  void _startListeningToWeight() {
+    _eventChannel.receiveBroadcastStream().listen((event) {
+      if (event is String && event.startsWith("W:")) {
+        final value = double.tryParse(event.substring(2));
+        if (value != null) {
+          setState(() {
+            _weightText = value.toStringAsFixed(1);
+          });
+        }
+      }
+    }, onError: (error) {
+      print("Bluetooth stream error: $error");
+    });
+  }
 
   void _onTapDown(TapDownDetails details) {
     setState(() {
@@ -207,8 +252,23 @@ class _WeightScreenState extends State<WeightScreen> {
       _send("L"); // left
     }else if (_isRightPressed) {
       _send("R"); // right
+    }else if(_isMiddleUpPressed){
+      _send("A");
+    }
+    else if(_isMiddleDownPressed){
+      _send("C");
     }
   }
+
+  Color _getWeightColor(String weightText) {
+    try {
+      final double weight = double.parse(weightText);
+      return weight >= 500 ? Colors.red : Colors.green;
+    } catch (e) {
+      return Colors.black; // fallback if parsing fails
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -220,32 +280,41 @@ class _WeightScreenState extends State<WeightScreen> {
               children: [
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Center(
-                    child: Container(
-                      width: 200,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.black),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Padding(
-                        padding: EdgeInsets.only(top: 10, bottom: 10),
-                        child: Text(
-                          'Weight Here',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
+                    child: Center(
+                      child: Container(
+                        width: 200,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.black),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 300),
+                            transitionBuilder: (Widget child, Animation<double> animation) {
+                              return ScaleTransition(scale: animation, child: child);
+                            },
+                            child: Text(
+                              '$_weightText g',
+                              key: ValueKey<String>(_weightText),
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 20,
+                                color: _getWeightColor(_weightText),
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
                 ),
                 Expanded(
                   child: Center(
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
+                        // Existing up/down buttons (forward/backward)
                         Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -270,42 +339,79 @@ class _WeightScreenState extends State<WeightScreen> {
                               onPressEnd: () {
                                 _isBackwardPressed = false;
                                 _stopSending();
-                              }
+                              },
                             ),
                           ],
                         ),
-                        const SizedBox(width: 200),
-                        Row(
+
+                        const SizedBox(width: 100),
+
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             RoundButton(
-                              icon: Icons.keyboard_double_arrow_left_sharp,
+                              svgAsset: 'assets/icons/lift_up.svg',
                               onPressStart: () {
-                                _isLeftPressed = true;
+                                _isMiddleUpPressed = true;
                                 _startSending();
                               },
                               onPressEnd: () {
-                                _isLeftPressed = false;
+                                _isMiddleUpPressed = false;
                                 _stopSending();
-                              }
+                              },
                             ),
-                            const SizedBox(width: 40),
+
+                            const SizedBox(height: 5),
+
+                            Row(
+                              children: [
+                                RoundButton(
+                                  icon: Icons.keyboard_double_arrow_left_sharp,
+                                  onPressStart: () {
+                                    _isLeftPressed = true;
+                                    _startSending();
+                                  },
+                                  onPressEnd: () {
+                                    _isLeftPressed = false;
+                                    _stopSending();
+                                  },
+                                ),
+                                const SizedBox(width: 40),
+                                RoundButton(
+                                  icon: Icons.keyboard_double_arrow_right_sharp,
+                                  onPressStart: () {
+                                    _isRightPressed = true;
+                                    _startSending();
+                                  },
+                                  onPressEnd: () {
+                                    _isRightPressed = false;
+                                    _stopSending();
+                                  },
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 5),
+
+                            // Down (centered below left-right)
                             RoundButton(
-                              icon: Icons.keyboard_double_arrow_right_sharp,
-                                onPressStart: () {
-                                _isRightPressed = true;
+                              svgAsset: 'assets/icons/lift_down.svg',
+                              onPressStart: () {
+                                _isMiddleDownPressed = true;
                                 _startSending();
                               },
-                                onPressEnd: () {
-                                _isRightPressed = false;
+                              onPressEnd: () {
+                                _isMiddleDownPressed = false;
                                 _stopSending();
-                              }
+                              },
                             ),
                           ],
                         ),
                       ],
                     ),
                   ),
-                ),
+                )
+                ,
                 Padding(
                   padding: const EdgeInsets.only(bottom: 20),
                   child: Column(
@@ -368,6 +474,15 @@ class _WeightScreenState extends State<WeightScreen> {
                 height: 50,
               ),
             ),
+            Positioned(
+              top: 20,
+              right: 20,
+              child: Image.asset(
+                'assets/ec_logo.png',
+                width: 50,
+                height: 50,
+              ),
+            ),
           ],
         ),
       ),
@@ -376,13 +491,15 @@ class _WeightScreenState extends State<WeightScreen> {
 }
 
 class RoundButton extends StatefulWidget {
-  final IconData icon;
+  final IconData? icon; // optional now
+  final String? svgAsset; // <-- NEW
   final VoidCallback onPressStart;
   final VoidCallback onPressEnd;
 
   const RoundButton({
     super.key,
-    required this.icon,
+    this.icon,
+    this.svgAsset, // <-- NEW
     required this.onPressStart,
     required this.onPressEnd,
   });
@@ -437,17 +554,25 @@ class _RoundButtonState extends State<RoundButton> {
               boxShadow: _isPressed
                   ? [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.5),
+                  color: Colors.black.withOpacity(0.2),
                   blurRadius: 10,
                   spreadRadius: 5,
                 )
               ]
                   : [],
             ),
-            child: Icon(
-              widget.icon,
-              size: 48,
-              color: Colors.black,
+            child: Center(
+              child: widget.svgAsset != null
+                  ? SvgPicture.asset(
+                widget.svgAsset!,
+                width: 30,
+                height: 30,
+              )
+                  : Icon(
+                widget.icon,
+                size: 48,
+                color: Colors.black,
+              ),
             ),
           ),
         ),
@@ -455,4 +580,5 @@ class _RoundButtonState extends State<RoundButton> {
     );
   }
 }
+
 
